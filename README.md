@@ -2,7 +2,7 @@
 
 Grok / agent skill: Pareto-optimal menu picks on **cost**, **macros**, **deliciousness**, and **reviews**.
 
-**v3** (Laredo independent dogfood): taco-shop named builds, refined solo gates (400 kcal + adequacy Noul), sparse-nutrition mode, price-conflict protocol, confidence-aware knee, top-k-first presentation, local-language reviews.
+**v4** (Austin dogfood): shareable/dip gates, BBQ by-the-pound builds, named-build price amplification, estimate bands, access-friction caveats, real local-language review scoring, high-confidence alternatives, optional sodium soft-penalty, cultural co-icon notables.
 
 ## Install
 
@@ -14,7 +14,7 @@ Needs a TypeSafe API key for Jev deliciousness Scores.
 
 1. Menu (photo / PDF / link / paste)
 2. Restaurant name + location
-3. Optional: constraints, weights, `named_builds` (BYO or taco shops), `serving_mode`
+3. Optional: constraints, weights, `named_builds`, `serving_mode` (`by_the_pound` for BBQ)
 
 ## Changelog
 
