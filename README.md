@@ -1,6 +1,6 @@
 # burrito-frontier
 
-A Grok / agent **skill** that finds Pareto-optimal menu items across:
+A agent **skill** that finds Pareto-optimal menu items across:
 
 - **cost** (minimize)
 - **macros** (maximize; estimated protein + density + protein/$)
