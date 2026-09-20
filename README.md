@@ -1,30 +1,24 @@
 # burrito-frontier
 
-An agent **skill** that finds Pareto-optimal menu items across:
+Grok / agent skill: Pareto-optimal menu picks on **cost**, **macros**, **deliciousness**, and **reviews**.
 
-- **cost** (minimize)
-- **macros** (maximize; estimated protein + density + protein/$)
-- **deliciousness** (TypeSafe **Jev** Score)
-- **reviews** (dish-level public signal)
+**v2** (post fast-food dogfood): Jev scores **deliciousness only**; macros from published nutrition in code; solo-diner gates; BYO named builds; knee/top-k + full frontier; price/review provenance.
 
 ## Install
 
-Copy [`SKILL.md`](./SKILL.md) into your agent’s skills folder (e.g. as `burrito-frontier/SKILL.md`), or invoke it after importing into Grok Bot.
+Copy [`SKILL.md`](./SKILL.md) into your agent skills folder as `burrito-frontier/SKILL.md`, or import into Grok Bot.
 
-Requires a TypeSafe API key (`TYPESAFE_API_KEY`) for Jev scoring.
+Needs a TypeSafe API key for Jev deliciousness Scores.
 
 ## Usage
 
-Provide:
-
-1. A menu (photo, PDF, link, or paste)
+1. Menu (photo / PDF / link / paste)
 2. Restaurant name + location
+3. Optional: constraints, weights, `named_builds` (BYO), `serving_mode`
 
-Optional: constraints (budget, allergies), axis weights (ranking within the frontier only).
+## Changelog
 
-## Output
-
-Fixed prose + JSON schema — see `SKILL.md` for the full contract (`frontier`, scores, sources, caveats).
+See [CHANGELOG.md](./CHANGELOG.md).
 
 ## License
 
