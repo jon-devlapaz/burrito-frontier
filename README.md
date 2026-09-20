@@ -1,8 +1,8 @@
 # burrito-frontier
 
-Grok / agent skill: Pareto-optimal menu picks on **cost**, **macros**, **deliciousness**, and **reviews**.
+Location-agnostic Grok / agent skill: Pareto-optimal menu picks on **cost**, **macros**, **deliciousness**, and **reviews** for **any** restaurant.
 
-**v4** (Austin dogfood): shareable/dip gates, BBQ by-the-pound builds, named-build price amplification, estimate bands, access-friction caveats, real local-language review scoring, high-confidence alternatives, optional sodium soft-penalty, cultural co-icon notables.
+Pass a menu + restaurant name/area at run time. The skill does **not** hardcode cities, chains, or house dishes.
 
 ## Install
 
@@ -13,12 +13,17 @@ Needs a TypeSafe API key for Jev deliciousness Scores.
 ## Usage
 
 1. Menu (photo / PDF / link / paste)
-2. Restaurant name + location
-3. Optional: constraints, weights, `named_builds`, `serving_mode` (`by_the_pound` for BBQ)
+2. Restaurant name + location (for prices/reviews)
+3. Optional: constraints, weights, `named_builds`, `serving_mode`
 
-## Changelog
+## Design notes
 
-See [CHANGELOG.md](./CHANGELOG.md).
+- Jev scores deliciousness only; macros/cost stay in code
+- Named builds for BYO, multi-item counter meals, and by-the-pound service
+- Shareable/dip gates and solo-diner adequacy rules
+- Top-k-first output with confidence-aware picks
+
+Dogfood history (where patches were validated) lives in [CHANGELOG.md](./CHANGELOG.md) only.
 
 ## License
 

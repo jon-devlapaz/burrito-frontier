@@ -2,32 +2,28 @@
 name: burrito-frontier
 description: >-
   Use when picking best menu items via Pareto on cost, macros, deliciousness,
-  and reviews — Jev deliciousness-only, shareable/BBQ gates, named builds,
-  sparse nutrition, top-k-first (v4).
+  and reviews — Jev deliciousness-only, shareable/by-the-pound gates, named
+  builds, sparse nutrition, top-k-first. Location-agnostic (v4).
 ---
 # burrito-frontier
 
 Find Pareto-optimal menu items across **cost**, **macros**, **deliciousness**, and **reviews**. Use TypeSafe **Jev** only for semantic judgments; keep arithmetic and labels in code. Always return the standard prose + JSON schema.
 
+This skill is **location-agnostic**: it works for any restaurant given a menu + place name/area for pricing and reviews. Do not bake in cities, chains, or house dishes.
+
 For Jev API shapes (Choice / Noul / Score), follow the `typesafe-ai` skill and live docs at `https://docs.typesafe.ai/`.
 
-## Version history (intent)
+## Capabilities (v4)
 
-**v2** — national QSR dogfood + Jev review: published nutrition; BYO builds; solo gates; frontier + top-k; price provenance; review tiers; Jev deliciousness-only; grilled rubric; meal vs entree; dominated notables.
-
-**v3** — Laredo independents: counter-service named builds; 400 kcal + adequacy Noul; sparse nutrition; price conflict; confidence-aware knee; top-k-first + ε; local-language reviews; regional combo mode.
-
-**v4** — Austin independents/regionals (Torchy’s, Terry Black’s, Matt’s El Rancho, Veracruz, Juan in a Million) — ordered patches:
-
-1. **P0 — Shareable / dip vessel gate:** if `vessel ∈ {dip, chips, queso, side}` or `shareable=true`, require per-person split **or** force meal-adequacy Noul ≥ 0.5 even when protein/kcal clear hard gates (stops Bob Armstrong / queso meal-wins).
-2. **P0 — BBQ / weighed-meat template:** `serving_mode=by_the_pound` with required named builds (mass + side); default medium price confidence; encourage `price_range` for ±10–15% scale variance.
-3. **P1 — Named-build price amplification:** if unit prices conflict >20%, mark the **N× build** `price_confidence: low` automatically.
-4. **P1 — Estimate bands in JSON:** when `nutrition_source=estimated`, emit `kcal_range` / `protein_range`.
-5. **P1 — Access-friction caveat:** optional non-axis `access_friction` (tourist line / limited hours) in prose/metadata — not a Pareto axis until measured.
-6. **P2 — Spanish (local-language) review retrieval:** fold real non-English snippets into review scores, not caveats-only.
-7. **P2 — High-confidence alternative:** when knee #2 deliciousness confidence ≫ #1, surface it as `recommended_alt` in prose + JSON.
-8. **P3 — Optional sodium soft-penalty** when published sodium coverage is rich.
-9. **P3 — Cultural co-icon notables:** when a dominated item is a known house icon, always include it in dominated notables with `why_notable: local_icon`.
+- Four-axis Pareto: cost ↓, macros ↑, deliciousness ↑, reviews ↑
+- Jev **deliciousness only** (+ meal-adequacy Noul for gates); macros and cost in code
+- Prefer published nutrition; estimate bands when sparse; optional sodium soft-penalty when labels are rich
+- Named builds for BYO, counter-service multi-item meals, and by-the-pound service
+- Solo-diner gates (default 400 kcal OR 20g protein) + kcal-only / shareable adequacy rules
+- Price provenance, >20% conflict protocol, named-build price amplification
+- Review specificity tiers + real local-language review retrieval
+- Top-k-first presentation, confidence-aware recommendation, optional `recommended_alt`
+- Auto ε / clustering when the frontier is huge; dominated notables including house icons
 
 ## Inputs
 
@@ -36,18 +32,18 @@ Collect what you have; ask only for missing required fields.
 | Field | Required | Notes |
 | --- | --- | --- |
 | `menu` | yes | Photo, PDF, link, or pasted text |
-| `restaurant` | yes | Name + **city/area** (required when scoring cost) |
+| `restaurant` | yes | Name + **city/area** (needed for cost/reviews grounding — supplied per run, not hardcoded) |
 | `goal` | no | Default: solo diner, equal-weight four-axis Pareto |
-| `constraints` | no | Hard filters: budget, allergies, no-pork, spice max, etc. |
+| `constraints` | no | Hard filters: budget, allergies, diet rules, spice max, etc. |
 | `weights` | no | Soft preference; does **not** change the frontier set, only knee/top-k ranking |
 | `candidate_limit` | no | Default ~12–20 mains after gates |
 | `serving_mode` | no | `entree_only` (default) \| `meal_normalized` \| `regional_combo` \| `by_the_pound` |
-| `named_builds` | conditional | **Required** for BYO, taco/gordita/plate shops, and by-the-pound BBQ: 3–15 concrete meals |
+| `named_builds` | conditional | **Required** for BYO, multi-item counter meals (e.g. N tacos / plates), and by-the-pound service: 3–15 concrete meals |
 | `min_kcal` / `min_protein_g` | no | Solo defaults: **400 kcal** OR **20g protein**. Both 0 = snack mode |
 | `sodium_mg_max` | no | Optional hard filter when labels exist |
 | `epsilon_pareto` | no | Default `auto`: if frontier share > 0.5, light ε-dominance / cluster |
 | `presentation` | no | Default `top_k_first`. `full_frontier` if user asks |
-| `access_friction` | no | Optional: `tourist_line` \| `limited_hours` \| `none` |
+| `access_friction` | no | Optional per-run metadata: `long_wait` \| `limited_hours` \| `none` |
 
 Normalize into:
 
@@ -70,9 +66,9 @@ Normalize into:
 
 ### 1. Parse the menu (+ meal templates)
 - Extract name, price, description, category, prep, and `vessel` when relevant (`plate`, `taco`, `bowl`, `dip`, `chips`, `sandwich`, etc.).
-- **BYO / taco / plate shops:** require `named_builds` (N-tacos or plates). No orphan singles when multi-item is the local norm (unless snack mode).
-- **BBQ / by-the-pound:** use `serving_mode=by_the_pound` and named builds like `½ lb brisket + beans`. Never treat raw $/lb alone as a solo meal without mass + side.
-- Tag dips/queso/chips as `shareable=true` / vessel dip|chips.
+- **BYO / multi-item counter meals:** require `named_builds` (e.g. N tacos or a plate). No orphan singles when multi-item is the local norm (unless snack mode).
+- **By-the-pound service:** use `serving_mode=by_the_pound` and named builds like `½ lb meat + side`. Never treat raw $/lb alone as a solo meal without mass + side.
+- Tag dips/cheese dips/chips as `shareable=true` / vessel dip|chips.
 - Shareables need explicit `servings` and **per-person** price/macros before candidacy (or hit the shareable gate below).
 - Apply constraints, then gates. Cap at `candidate_limit`.
 
@@ -91,7 +87,7 @@ Normalize into:
 
 ### 4. Ground reviews (tiers + real local-language evidence)
 - Prefer dish-specific mentions; `review_specificity`: `dish` | `category` | `brand_default` (cap brand_default at 6.0).
-- When menu/chatter is Spanish-first (or other local language), **retrieve and score real snippets** in that language; fold into `review_score`, not caveats-only. Caveat if evidence remains thin.
+- When menu/chatter is not English-first, **retrieve and score real snippets** in the local language; fold into `review_score`, not caveats-only. Caveat if evidence remains thin.
 - Optional Jev Score/Noul over short real snippets; never invent quotes.
 - House icons that lose Pareto should still appear in dominated notables (`why_notable: local_icon`).
 
@@ -101,18 +97,17 @@ Normalize into:
 - Run-level `nutrition_coverage`: `rich` | `mixed` | `sparse`.
 - When estimated: emit `kcal_range` / `protein_range`.
 - When sparse: soft-downweight macros in **knee** (e.g. ×0.7) unless user prioritizes macros.
-- When nutrition is **rich** and sodium is published, optional soft sodium penalty on macros composite so extreme-sodium builds don’t look equal to grilled peers.
+- When nutrition is **rich** and sodium is published, optional soft sodium penalty on macros composite so extreme-sodium builds don’t look equal to leaner peers.
 - **Do not** ask Jev for macro fit when numbers are known.
 
 ### 6. Score with Jev (semantic only)
 - TypeSafe System One + `jev-latest` (or current docs alias).
 - Batch shared state with full candidate list.
-- **Required — Deliciousness Score** (0–3), with grilled/core-healthy standouts allowed.
+- **Required — Deliciousness Score** (0–3), with grilled/core-healthy standouts allowed when they are a kitchen strength.
 - **Meal-adequacy Noul** when gates require it (kcal-only hole and shareable gate).
 - Store score, confidence, probabilities. Heuristic fallback if API fails.
 
 ### 7. Build objectives
-
 | Axis | Direction | How |
 | --- | --- | --- |
 | `cost` | minimize | Per-person / meal-normalized / pound-build ticket as applicable |
@@ -140,7 +135,7 @@ Use **Standard output**.
 2. Top picks (knee / top-3) — name, price, why.
 3. How to choose (macros vs taste vs budget).
 4. Full frontier — appendix unless asked up front.
-5. Dominated notables (required; include local icons).
+5. Dominated notables (required; include house icons).
 6. Caveats: nutrition_coverage; price conflicts; review language; serving_mode; gates; Jev confidence; access_friction; menu exclusions.
 
 ### JSON block
@@ -184,4 +179,4 @@ Each candidate/frontier item should support: price fields (`price_basis`, `price
 - Jev = deliciousness (+ adequacy Noul for gates). Macros and cost = code.
 - Dips/shareables are not solo meals without per-person split or adequacy pass.
 - Saving user prefs to memory is encouraged; do not block the run.
-- Keep the skill generic: no single restaurant, city, or user baked into the recipe.
+- **Keep the skill generic:** no single restaurant, city, cuisine brand, or user baked into the recipe. Location and venue are **inputs per run** only. Dogfood provenance belongs in CHANGELOG, not in the procedure.
