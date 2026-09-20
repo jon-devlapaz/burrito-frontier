@@ -2,30 +2,29 @@
 name: burrito-frontier
 description: >-
   Use when picking best menu items via Pareto on cost, macros, deliciousness,
-  and reviews — Jev for deliciousness only, published nutrition preferred,
-  fixed prose+JSON output (v2).
+  and reviews — Jev deliciousness-only, published nutrition preferred, taco-shop
+  named builds, refined solo gates, top-k-first output (v3).
 ---
 # burrito-frontier
 
-Find Pareto-optimal menu items across **cost**, **macros**, **deliciousness**, and **reviews**. Use TypeSafe **Jev** only where semantic judgment is needed; keep arithmetic and labels in code. Always return the standard prose + JSON schema.
+Find Pareto-optimal menu items across **cost**, **macros**, **deliciousness**, and **reviews**. Use TypeSafe **Jev** only for semantic judgments; keep arithmetic and labels in code. Always return the standard prose + JSON schema.
 
 For Jev API shapes (Choice / Noul / Score), follow the `typesafe-ai` skill and live docs at `https://docs.typesafe.ai/`.
 
-## Patch intent (v2 — post dogfood)
+## Version history (intent)
 
-Ordered fixes from US fast-food dogfood + Jev-appropriateness review:
+**v2** (national QSR dogfood + Jev review): published nutrition preferred; BYO named builds; solo gates; frontier + top-k; price provenance; review tiers; Jev deliciousness-only; grilled rubric; meal vs entree; dominated notables; confidence/schema.
 
-1. Prefer **published nutrition**; estimate only as fallback (`nutrition_source` on every item).
-2. **BYO / chain mode:** require named builds (never score bare proteins alone).
-3. **Solo-diner gates:** default `min_kcal` / `min_protein_g` so snack SKUs cannot win on cost alone.
-4. Emit **full frontier + knee/top-k** under weights (4D frontiers are large).
-5. **Price provenance** for chains (`price_basis`, `price_confidence`, location required when cost matters).
-6. **Review evidence tiers**; down-weight brand-default scores.
-7. **Jev deliciousness only** (+ optional meal-adequacy Noul); **macros computed in code** (do not ask Jev to re-score published protein/kcal).
-8. Deliciousness rubric must allow **grilled/core-healthy house strengths** to be standouts.
-9. **Meal vs entree** serving mode for fast food.
-10. Always emit **dominated notables** with dominator pointers.
-11. Use Jev **confidence** when presenting wins; extend schema (`sodium_mg` optional, units, `jev_model`).
+**v3** (Laredo independent / regional dogfood) — ordered patches:
+
+1. **P0 — Counter-service meal template:** taco / gordita / plate shops use `named_builds` (N-tacos or a plate); never score orphan singles when local norm is multi-item.
+2. **P0 — Gate refinement:** if kcal-only passes and protein < `min_protein_g`, require meal-adequacy Noul ≥ 0.5 (or fail the gate). Default `min_kcal` raised to **400**.
+3. **P1 — Sparse-nutrition mode:** set `nutrition_coverage`; soft-downweight macros axis or show estimate bands when nearly all estimated.
+4. **P1 — Price conflict protocol:** if sources differ >20%, `price_confidence: low`; prefer in-store; optional `price_range`.
+5. **P1 — Knee respects Jev confidence:** auto-caveat or skip as "order this" when top-k deliciousness confidence < 0.45.
+6. **P2 — Present top-k by default;** full frontier as appendix; optional ε-dominance when frontier > 50% of candidates.
+7. **P2 — Spanish (or local-language) review path** when menus/chatter aren't English-first.
+8. **P3 — Combo serving_mode** for regional meals (taco + side + drink).
 
 ## Inputs
 
@@ -34,15 +33,17 @@ Collect what you have; ask only for missing required fields.
 | Field | Required | Notes |
 | --- | --- | --- |
 | `menu` | yes | Photo, PDF, link, or pasted text |
-| `restaurant` | yes | Name + **city/area** (required when scoring cost for chains) |
+| `restaurant` | yes | Name + **city/area** (required when scoring cost) |
 | `goal` | no | Default: solo diner, equal-weight four-axis Pareto |
 | `constraints` | no | Hard filters: budget, allergies, no-pork, spice max, etc. |
-| `weights` | no | Soft preference; does **not** change the frontier set, only knee/top-k ranking inside it |
+| `weights` | no | Soft preference; does **not** change the frontier set, only knee/top-k ranking |
 | `candidate_limit` | no | Default ~12–20 mains after gates |
-| `serving_mode` | no | `entree_only` (default) \| `meal_normalized` (add typical side+drink cost when chains sell combos) |
-| `named_builds` | conditional | **Required** for BYO menus (Chipotle-style): 3–15 concrete assemblies with vessel + proteins + key toppings |
-| `min_kcal` / `min_protein_g` | no | Solo-diner defaults: **350 kcal** OR **20g protein** (either passes). Set both to 0 for snack mode |
+| `serving_mode` | no | `entree_only` (default) \| `meal_normalized` (side+drink) \| `regional_combo` (local plate/taco+side+drink norm) |
+| `named_builds` | conditional | **Required** for BYO **and** counter-service taco/gordita/plate shops: 3–15 concrete meals (e.g. `3× barbacoa tacos`, `fajita plate`). Include `vessel` / unit count |
+| `min_kcal` / `min_protein_g` | no | Solo-diner defaults: **400 kcal** OR **20g protein**. Both 0 = snack mode |
 | `sodium_mg_max` | no | Optional hard filter when labels exist |
+| `epsilon_pareto` | no | Default `auto`: if frontier share > 0.5, apply light ε-dominance or cluster before display |
+| `presentation` | no | Default `top_k_first` (full frontier in appendix/JSON). `full_frontier` if user asks |
 
 Normalize into:
 
@@ -53,47 +54,55 @@ Normalize into:
   "constraints": [],
   "weights": {"cost": 1, "macros": 1, "deliciousness": 1, "reviews": 1},
   "serving_mode": "entree_only",
-  "min_kcal": 350,
+  "min_kcal": 400,
   "min_protein_g": 20,
+  "presentation": "top_k_first",
   "menu_source": "image|url|text"
 }
 ```
 
 ## Steps
 
-### 1. Parse the menu
+### 1. Parse the menu (+ meal templates)
 - Extract name, price, description, category, prep (grilled / fried / steamed / sauced / sushi / etc.).
-- **Chains / BYO:** do not expand the full combinatorial menu. Use `named_builds` or a short list of common assemblies; record `vessel` (bowl / burrito / taco / salad / plate) as a first-class field.
-- Apply `constraints`, then solo-diner gates (`min_kcal` / `min_protein_g`) unless snack mode.
-- Prefer single-diner mains; shareables use **per-person** price and macros.
+- **BYO bowls/burritos:** use `named_builds` with vessel + proteins + key toppings — never bare proteins alone.
+- **Taco / gordita / plate / counter shops:** if the local norm is N tacos or a plate, **require named builds** (e.g. 3× barbacoa, mixed fajita plate). Do **not** leave single tacos as candidates when N≥2 is the usual meal — unless snack mode.
+- Apply `constraints`, then solo-diner gates (below).
+- Prefer single-diner mains; shareables need explicit `servings` and **per-person** price/macros before candidacy.
 - Cap at `candidate_limit` after gates.
 
-### 2. Price provenance
-- Record `price_basis`: `store_app` | `city_avg` | `national` | `menu_print` | `user`.
+### 2. Solo-diner gates (refined)
+- Pass if `kcal >= min_kcal` **OR** `protein_g >= min_protein_g` (defaults 400 / 20), unless snack mode.
+- **Kcal-only hole fix:** if the item passes on kcal alone but `protein_g < min_protein_g`, run meal-adequacy **Noul**. Require Noul ≥ **0.5** to keep; otherwise drop (or mark snack-only and exclude from cost-axis wins).
+- Optionally ask the same Noul for other borderline items.
+
+### 3. Price provenance + conflict protocol
+- Record `price_basis`: `store_app` | `city_avg` | `national` | `menu_print` | `delivery_app` | `user`.
 - Record `price_confidence`: `high` | `medium` | `low`.
-- For national chains, prefer the user’s city; if only national averages exist, mark confidence `low`/`medium` and say so in caveats.
+- Prefer in-store / official app over delivery aggregators when both exist.
+- If two sources differ by **>20%**, set `price_confidence: low`, note both in caveats, and prefer the in-store figure when known. You may store `price_range: [low, high]` instead of false precision.
+- Location required when cost matters for multi-site brands.
 
-### 3. Ground reviews (evidence tiers)
-- Search public reviews; prefer dish-specific mentions.
-- Assign `review_specificity`: `dish` | `category` | `brand_default`.
-- Score 0–10 from evidence. Cap **brand_default** at **6.0** unless the user weights reviews heavily.
-- Require at least light dish/category evidence before scores > 6.0.
-- Optional: if you have short review snippets, you may ask Jev a **Score** or **Noul** over those snippets; never invent quotes.
-- Record sources briefly.
+### 4. Ground reviews (tiers + language)
+- Prefer dish-specific mentions; assign `review_specificity`: `dish` | `category` | `brand_default`.
+- Cap **brand_default** at **6.0** unless the user weights reviews heavily.
+- Require light dish/category evidence before scores > 6.0.
+- When the menu or local chatter is Spanish-first (or another local language), **search and use that language** for dish signal; say so in caveats if English-only evidence is thin.
+- Optional: Jev Score/Noul over short real snippets; never invent quotes.
 
-### 4. Macros (code-first)
-- Prefer **published** nutrition (official PDF, aggregator cross-check). Set `nutrition_source: published | estimated`.
-- Estimate from description + prep **only** when published data is missing.
+### 5. Macros (code-first) + sparse-nutrition mode
+- Prefer **published** nutrition; else estimate. Set per-item `nutrition_source: published | estimated`.
 - Always compute in code: `protein_g`, `kcal`, `protein_per_dollar`, `protein_per_100kcal`, optional `sodium_mg`.
-- Shareables: normalize per person.
-- **Do not** ask Jev to score macro fit when protein/kcal/price are already known — that re-reads a spreadsheet.
+- Set run-level `nutrition_coverage`: `rich` | `mixed` | `sparse` (sparse ≈ almost all estimated — typical for independents).
+- When `sparse`: show estimate bands in prose; **soft-downweight** the macros axis in knee ranking (e.g. multiply macros weight by 0.7) unless the user prioritizes macros; never pretend lab precision.
+- **Do not** ask Jev for macro fit when numbers are already known.
 
-### 5. Score with Jev (semantic only)
-- Ensure `TYPESAFE_API_KEY` is available. `POST https://api.typesafe.ai/v1/systemone` with model `jev-latest` (or current docs alias).
-- One batch over shared `state`: restaurant, goal, full candidate list (ids, names, prep, price, published macros, short descriptors).
-- **Required — Deliciousness Score** (0–3) per candidate.
+### 6. Score with Jev (semantic only)
+- `TYPESAFE_API_KEY` → `POST https://api.typesafe.ai/v1/systemone`, model `jev-latest` (or current docs alias).
+- Batch shared `state`: restaurant, goal, candidates (ids, names, prep, price, macros, short descriptors).
+- **Required — Deliciousness Score** (0–3).
 
-Instructions must say explicitly: *Grilled, steamed, or other core-healthy items can still be standouts when they are a real strength of this kitchen (e.g. a chain known for grilled chicken). Do not reserve the top level for fried or novelty items only.*
+Instructions must say: *Grilled, steamed, or other core-healthy items can still be standouts when they are a real strength of this kitchen. Do not reserve the top level for fried or novelty items only.*
 
 Criteria (default):
 1. Bland or a miss for this kitchen
@@ -101,81 +110,63 @@ Criteria (default):
 3. Solid — would order again
 4. Standout on this menu
 
-- **Optional — Meal adequacy Noul** per candidate when gates are borderline: “Is this a satisfying solo meal (not a snack) given protein and kcal?”
-- Store `score`, `confidence`, `probabilities`. If `confidence` < 0.45, do not headline that item as an axis “win” without a caveat.
-- If Jev fails: say so, use a transparent heuristic deliciousness score, mark source `heuristic`.
+- **Meal-adequacy Noul** when required by the gate rule (and optionally for borderlines).
+- Store `score`, `confidence`, `probabilities`.
+- If Jev fails: transparent heuristic deliciousness; mark `heuristic`.
 
-### 6. Build objectives
+### 7. Build objectives
 After constraints + gates:
 
 | Axis | Direction | How |
 | --- | --- | --- |
-| `cost` | minimize | Price (or per-person). Prefer **meal-normalized** ticket when `serving_mode=meal_normalized`. Optional alternate: `$` per 25g protein for value framing in prose — raw price still drives Pareto unless user asks otherwise. |
-| `macros` | maximize | **Code only:** `0.5 * min(protein_per_dollar/3, 1) + 0.3 * min(protein_per_100kcal/15, 1) + 0.2 * min(protein_g/50, 1)` (tune only if asked). Optional soft sodium penalty when labels exist. |
+| `cost` | minimize | Price (per-person if shared). Use meal/combo-normalized ticket when `serving_mode` says so. |
+| `macros` | maximize | Code: `0.5 * min(protein_per_dollar/3, 1) + 0.3 * min(protein_per_100kcal/15, 1) + 0.2 * min(protein_g/50, 1)`. Soft sodium penalty optional. Apply sparse soft-downweight in **knee only** unless user opts out. |
 | `deliciousness` | maximize | Jev Score / 3 |
-| `reviews` | maximize | `review_score / 10` (after specificity caps) |
+| `reviews` | maximize | `review_score / 10` after specificity caps |
 
-### 7. Pareto + presentation
-- **Frontier:** non-dominated set on the four objectives (cost via negated price).
-- **Knee / top-k:** always also rank frontier items by weighted sum of normalized objectives (default weights 1,1,1,1); present **top 3** as the primary recommendation unless the user asks for the full frontier only.
-- **Dominated notables:** always include 3–5 important dominated items with `dominated_by` and axes lost (icons, canonical “healthy orders,” fan favorites).
-- Prose must label **which axis** each frontier item wins — never imply frontier = healthy.
+### 8. Pareto + presentation
+- **Frontier:** non-dominated set (cost via negated price).
+- **ε / clustering (auto):** if `|frontier| / |candidates| > 0.5`, apply light ε-dominance or cluster near-ties so the displayed frontier isn't ~everyone; keep full set in JSON under `frontier_full` if trimmed for display.
+- **Knee / top-k:** weighted sum of normalized objectives (default weights 1,1,1,1); primary UX = **top 3**.
+- **Confidence rule:** if knee #1 deliciousness `confidence` < **0.45**, do not print it as the unqualified "order this" line — caveat it and prefer the next knee item with confidence ≥ 0.45 when available.
+- **Dominated notables:** always 3–5 with `dominated_by` + axes lost.
+- Default presentation: **top-k first**; full frontier as appendix (unless user asks for full frontier up front).
+- Label which axis each item wins — never imply frontier = healthy.
 
-### 8. Deliver
-Use **Standard output**. Lead with top-k / how to choose; then full frontier; then dominated notables; then caveats.
+### 9. Deliver
+Use **Standard output**.
 
 ## Standard output
 
 ### Prose
-1. One-line: restaurant, top pick (knee #1), frontier size.
-2. **Top picks (knee / top-3)** under current weights — name, price, why.
-3. Full frontier — name, price, axis wins, one-line why.
-4. How to choose (3–4 bullets: macros vs taste vs budget).
-5. Dominated notables (required) — what beat them and on which axes.
-6. Caveats: nutrition_source mix; price_basis/confidence; review thinness; serving_mode; Jev confidence notes; items not on the provided menu excluded.
+1. One-line: restaurant, recommended pick (confidence-aware), frontier size.
+2. **Top picks (knee / top-3)** — name, price, why; caveat low-confidence heads.
+3. How to choose (3–4 bullets: macros vs taste vs budget).
+4. Full frontier — appendix-style unless `presentation=full_frontier`.
+5. Dominated notables (required).
+6. Caveats: nutrition_coverage; price conflicts; review language/thinness; serving_mode; gate drops; Jev confidence; menu exclusions.
 
 ### JSON block
 
 ```json
 {
   "skill": "burrito-frontier",
-  "skill_version": 2,
+  "skill_version": 3,
   "restaurant": {"name": "", "location": ""},
   "inputs": {
     "constraints": [],
     "weights": {"cost": 1, "macros": 1, "deliciousness": 1, "reviews": 1},
     "serving_mode": "entree_only",
-    "min_kcal": 350,
+    "min_kcal": 400,
     "min_protein_g": 20,
-    "candidate_count": 0
+    "presentation": "top_k_first",
+    "candidate_count": 0,
+    "nutrition_coverage": "sparse"
   },
   "units": {"price": "USD", "protein": "g", "energy": "kcal", "sodium": "mg"},
   "top_k": [],
-  "frontier": [
-    {
-      "name": "",
-      "price": 0,
-      "price_basis": "city_avg",
-      "price_confidence": "medium",
-      "wins": ["deliciousness"],
-      "why": "",
-      "vessel": null,
-      "prep": "",
-      "nutrition_source": "published",
-      "scores": {
-        "cost": 0,
-        "macros_composite": 0,
-        "deliciousness_jev": 0,
-        "deliciousness_confidence": 0,
-        "review_score": 0,
-        "review_specificity": "dish",
-        "protein_g": 0,
-        "kcal": 0,
-        "protein_per_dollar": 0,
-        "sodium_mg": null
-      }
-    }
-  ],
+  "frontier": [],
+  "frontier_full": [],
   "dominated_notable": [
     {
       "name": "",
@@ -184,16 +175,19 @@ Use **Standard output**. Lead with top-k / how to choose; then full frontier; th
       "why_notable": ""
     }
   ],
+  "gated_out": [],
   "jev": {"model": "", "deliciousness_only": true},
-  "sources": {"menu": "image|url|text", "reviews": [], "nutrition": []},
+  "sources": {"menu": "image|url|text", "reviews": [], "nutrition": [], "prices": []},
   "caveats": []
 }
 ```
 
+Each frontier/top_k item should carry: `price`, `price_basis`, `price_confidence`, optional `price_range`, `wins`, `why`, `vessel`, `prep`, `nutrition_source`, and `scores` (`cost`, `macros_composite`, `deliciousness_jev`, `deliciousness_confidence`, `review_score`, `review_specificity`, `protein_g`, `kcal`, `protein_per_dollar`, `sodium_mg`).
+
 ## Rules
-- Do not recommend items absent from the provided menu (or outside `named_builds` for BYO).
+- Do not recommend items absent from the provided menu (or outside `named_builds` when those are required).
 - Do not fabricate review quotes, ratings, or nutrition numbers.
-- Prefer published nutrition; label estimates.
-- Jev = deliciousness (+ optional adequacy Noul). Macros and cost = code.
-- Saving user prefs (allergies, usual weights) to memory is encouraged; do not block the run.
+- Prefer published nutrition; label estimates; be honest when coverage is sparse.
+- Jev = deliciousness (+ adequacy Noul for gates). Macros and cost = code.
+- Saving user prefs to memory is encouraged; do not block the run.
 - Keep the skill generic: no single restaurant, city, or user baked into the recipe.

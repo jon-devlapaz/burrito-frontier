@@ -2,7 +2,7 @@
 
 Grok / agent skill: Pareto-optimal menu picks on **cost**, **macros**, **deliciousness**, and **reviews**.
 
-**v2** (post fast-food dogfood): Jev scores **deliciousness only**; macros from published nutrition in code; solo-diner gates; BYO named builds; knee/top-k + full frontier; price/review provenance.
+**v3** (Laredo independent dogfood): taco-shop named builds, refined solo gates (400 kcal + adequacy Noul), sparse-nutrition mode, price-conflict protocol, confidence-aware knee, top-k-first presentation, local-language reviews.
 
 ## Install
 
@@ -14,7 +14,7 @@ Needs a TypeSafe API key for Jev deliciousness Scores.
 
 1. Menu (photo / PDF / link / paste)
 2. Restaurant name + location
-3. Optional: constraints, weights, `named_builds` (BYO), `serving_mode`
+3. Optional: constraints, weights, `named_builds` (BYO or taco shops), `serving_mode`
 
 ## Changelog
 
